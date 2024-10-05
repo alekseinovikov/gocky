@@ -1,10 +1,17 @@
 package core
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+type Lock interface {
+	Lock() (bool, error)
+	Unlock()
+}
 
 type Locker interface {
-	Lock()
-	Unlock()
+	NewLock(*Job) Lock
 }
 
 type jobScheduler struct {
@@ -30,32 +37,42 @@ func (s *jobScheduler) registerJob(job *Job) {
 	switch job.TaskType {
 	case ONCE:
 		s.scheduleOnceJob(job)
-	case PERIODIC:
-		s.schedulePeriodicJob(job)
+	case FIXED_RATE:
+		s.scheduleFixedRateJob(job)
 	}
 }
 
 func (s *jobScheduler) scheduleOnceJob(job *Job) {
 	go func() {
-		time.Sleep(job.duration)
+		time.Sleep(job.Duration)
 
 		s.runLocked(job)
 	}()
 }
 
-func (s *jobScheduler) schedulePeriodicJob(job *Job) {
+func (s *jobScheduler) scheduleFixedRateJob(job *Job) {
 	go func() {
 		for {
 			s.runLocked(job)
 
-			time.Sleep(job.duration)
+			time.Sleep(job.Duration)
 		}
 	}()
 }
 
 func (s *jobScheduler) runLocked(job *Job) {
-	s.locker.Lock()
-	defer s.locker.Unlock()
+	lock := s.locker.NewLock(job)
 
-	job.task()
+	// if we can't lock the job, we just skip it - it runs anything else
+	if ok, err := lock.Lock(); !ok {
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		return
+	}
+
+	defer lock.Unlock()
+
+	job.Task()
 }

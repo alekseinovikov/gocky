@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/google/uuid"
+	"fmt"
 	"time"
 )
 
@@ -9,40 +9,63 @@ type TaskType int
 
 const (
 	_ TaskType = iota
-	PERIODIC
 	ONCE
+	FIXED_RATE
 )
 
 type Task func()
 
 type Job struct {
-	Uuid     string
+	Name     string
 	TaskType TaskType
-	task     Task
-	duration time.Duration
+	Task     Task
+	Duration time.Duration
 }
 
-func NewJob(options ...func(job *Job)) *Job {
-	job := &Job{
-		Uuid: uuid.NewString(),
-	}
+func NewJob(options ...func(job *Job)) (*Job, error) {
+	job := &Job{}
 
 	for _, option := range options {
 		option(job)
 	}
 
-	return job
+	err := validateState(job)
+	if err != nil {
+		return nil, err
+	}
+
+	return job, nil
+}
+
+func validateState(job *Job) error {
+	if job.Name == "" {
+		return fmt.Errorf("job name is required")
+	}
+
+	if job.Task == nil {
+		return fmt.Errorf("job task is required")
+	}
+
+	if job.Duration == 0 {
+		return fmt.Errorf("job duration is required")
+	}
+
+	if job.TaskType == 0 {
+		return fmt.Errorf("job task type is required")
+	}
+
+	return nil
 }
 
 func WithTask(task Task) func(job *Job) {
 	return func(job *Job) {
-		job.task = task
+		job.Task = task
 	}
 }
 
 func WithDuration(duration time.Duration) func(job *Job) {
 	return func(job *Job) {
-		job.duration = duration
+		job.Duration = duration
 	}
 }
 
@@ -52,9 +75,9 @@ func Once() func(job *Job) {
 	}
 }
 
-func Periodic() func(job *Job) {
+func FixedRate() func(job *Job) {
 	return func(job *Job) {
-		job.TaskType = PERIODIC
+		job.TaskType = FIXED_RATE
 	}
 }
 
