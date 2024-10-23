@@ -56,14 +56,14 @@ func TestNewRedisLockFactory(t *testing.T) {
 
 func TestRedisLockFactory_NewLock(t *testing.T) {
 	factory := NewRedisLockFactory(*client.Options())
-	lock := factory.NewLock("test-lock")
+	lock := factory.GetLock("test-lock")
 	assert.NotNil(t, lock)
 	assert.Equal(t, "test-lock", lock.Name())
 }
 
 func TestRedisLock_TryLock(t *testing.T) {
 	factory := NewRedisLockFactory(*client.Options())
-	lock := factory.NewLock("test-lock")
+	lock := factory.GetLock("test-lock")
 
 	locked, err := lock.TryLock()
 	assert.NoError(t, err)
@@ -76,7 +76,7 @@ func TestRedisLock_TryLock(t *testing.T) {
 
 func TestRedisLock_Lock_Unlock(t *testing.T) {
 	factory := NewRedisLockFactory(*client.Options())
-	lock := factory.NewLock("test-lock")
+	lock := factory.GetLock("test-lock")
 
 	err := lock.Lock()
 	assert.NoError(t, err)
@@ -90,7 +90,7 @@ func TestRedisLock_Lock_Unlock(t *testing.T) {
 
 func TestRedisLock_Expire(t *testing.T) {
 	factory := NewRedisLockFactory(*client.Options())
-	lock := factory.NewLock("test-lock")
+	lock := factory.GetLock("test-lock")
 
 	err := lock.Lock()
 	assert.NoError(t, err)
@@ -109,7 +109,7 @@ func TestRedisLock_Expire(t *testing.T) {
 
 func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
 	factory := NewRedisLockFactory(*client.Options())
-	lock := factory.NewLock("test-lock-measure")
+	lock := factory.GetLock("test-lock-measure")
 
 	err := lock.Lock()
 	started := time.Now()

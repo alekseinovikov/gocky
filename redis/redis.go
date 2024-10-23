@@ -28,7 +28,7 @@ func NewRedisLockFactory(options redis.Options) core.LockFactory {
 	}
 }
 
-func (r *redisLockFactory) NewLock(lockName string) core.Lock {
+func (r *redisLockFactory) GetLock(lockName string) core.Lock {
 	r.cacheRWLock.RLock()
 	if lock, ok := r.cache[lockName]; ok {
 		r.cacheRWLock.RUnlock()

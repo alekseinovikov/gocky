@@ -8,5 +8,5 @@ type Lock interface {
 }
 
 type LockFactory interface {
-	NewLock(lockName string) Lock
+	GetLock(lockName string) Lock
 }
