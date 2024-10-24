@@ -13,7 +13,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - if: matrix.os == 'macos-latest'
-        run: |
-          brew install docker
+      - name: Setup Docker on macOS
+        if: matrix.os == 'macos-latest'
+        uses: douglascamata/setup-docker-macos-action@v1-alpha
       - run: go test ./...
