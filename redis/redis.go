@@ -10,8 +10,16 @@ import (
 
 var (
 	keyPrefix               = "gocky:lock:"
-	defaultKeyTTL           = 100 * time.Millisecond
-	defaultSpinLockDuration = defaultKeyTTL / 2
+	defaultKeyTTL           = 100 // In milliseconds
+	defaultSpinLockDuration = time.Duration(defaultKeyTTL/2) * time.Millisecond
+
+	lockAcquireScript = `
+		if redis.call("EXISTS", KEYS[1]) == 1 then
+			return 0
+		end
+		return redis.call("SET", KEYS[1], 1, "PX", ARGV[1], "NX")
+	`
+	lockAcquireScriptDescriptor = redis.NewScript(lockAcquireScript)
 )
 
 type redisLockFactory struct {
@@ -102,7 +110,7 @@ func (r *redisLock) Lock() error {
 	}
 
 	// once lock is acquired we are starting a ticker to keep it alive
-	r.ticker = time.NewTicker(defaultKeyTTL / 2)
+	r.ticker = time.NewTicker(time.Duration(defaultKeyTTL / 2))
 	r.tickerDone = make(chan struct{})
 	go func() {
 		for {
@@ -136,18 +144,14 @@ func (r *redisLock) Unlock() {
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
-	intCmd := r.client.Incr(r.ctx, r.key)
-	result, err := intCmd.Result()
-	if err != nil {
-		return false, err
+	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, defaultKeyTTL)
+	if result.Err() != nil {
+		return false, result.Err()
 	}
 
-	if result != 1 {
-		return false, nil
+	if result.Val() == "OK" {
+		return true, nil
 	}
 
-	boolCmd := r.client.PExpire(r.ctx, r.key, defaultKeyTTL)
-	_, err = boolCmd.Result()
-
-	return err == nil, err
+	return false, nil
 }

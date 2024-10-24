@@ -100,7 +100,7 @@ func TestRedisLock_Expire(t *testing.T) {
 		lock.Unlock()
 	}()
 
-	time.Sleep(defaultKeyTTL + 10*time.Millisecond)
+	time.Sleep(time.Duration(defaultKeyTTL)*time.Millisecond + 10*time.Millisecond)
 
 	locked, err := lock.TryLock()
 	assert.NoError(t, err)
