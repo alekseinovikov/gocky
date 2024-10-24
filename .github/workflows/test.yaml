@@ -19,7 +19,7 @@ jobs:
 
       - name: Setup Docker on macOS
         if: matrix.os == 'macos-latest'
-        run: brew install orbstack
+        run: brew install orbstack && orb
 
       - name: Test
         run: go test ./...
