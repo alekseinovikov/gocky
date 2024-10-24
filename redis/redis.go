@@ -2,7 +2,7 @@ package redis
 
 import (
 	"context"
-	"github.com/alekseinovikov/gocky/core"
+	"github.com/alekseinovikov/gocky"
 	"github.com/redis/go-redis/v9"
 	"sync"
 	"time"
@@ -10,25 +10,25 @@ import (
 
 var (
 	keyPrefix               = "gocky:lock:"
-	defaultKeyTTL           = time.Second            // minimal supported TTL for redis is 1 second
-	defaultSpinLockDuration = 100 * time.Millisecond // default spin lock duration
+	defaultKeyTTL           = 100 * time.Millisecond
+	defaultSpinLockDuration = defaultKeyTTL / 2
 )
 
 type redisLockFactory struct {
 	client      *redis.Client
-	cache       map[string]core.Lock
+	cache       map[string]gocky.Lock
 	cacheRWLock sync.RWMutex
 }
 
-func NewRedisLockFactory(options redis.Options) core.LockFactory {
+func NewRedisLockFactory(options redis.Options) gocky.LockFactory {
 	client := redis.NewClient(&options)
 	return &redisLockFactory{
 		client: client,
-		cache:  make(map[string]core.Lock),
+		cache:  make(map[string]gocky.Lock),
 	}
 }
 
-func (r *redisLockFactory) GetLock(lockName string) core.Lock {
+func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) gocky.Lock {
 	r.cacheRWLock.RLock()
 	if lock, ok := r.cache[lockName]; ok {
 		r.cacheRWLock.RUnlock()
@@ -41,6 +41,7 @@ func (r *redisLockFactory) GetLock(lockName string) core.Lock {
 
 	newLock := &redisLock{
 		client: r.client,
+		ctx:    ctx,
 		name:   lockName,
 		key:    generateKey(lockName),
 	}
@@ -55,6 +56,7 @@ func generateKey(lockName string) string {
 
 type redisLock struct {
 	name       string
+	ctx        context.Context
 	key        string
 	client     *redis.Client
 	ticker     *time.Ticker
@@ -77,10 +79,15 @@ func (r *redisLock) Lock() error {
 
 	// we are trying to keep the lock
 	for !locked {
-		time.Sleep(defaultSpinLockDuration)
-		locked, err = r.TryLock()
-		if err != nil {
-			return err
+		select {
+		case <-r.ctx.Done():
+			return r.ctx.Err()
+		default:
+			time.Sleep(defaultSpinLockDuration)
+			locked, err = r.TryLock()
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -94,6 +101,9 @@ func (r *redisLock) Lock() error {
 				return
 			case <-r.ticker.C:
 				_, _ = r.tryToUpdateRedisLock()
+			case <-r.ctx.Done():
+				r.Unlock()
+				return
 			}
 		}
 	}()
@@ -109,13 +119,14 @@ func (r *redisLock) Unlock() {
 	// we stop the ticker
 	r.ticker.Stop()
 	r.tickerDone <- struct{}{}
+	close(r.tickerDone)
 
 	// and remove the lock from redis
-	r.client.Del(context.Background(), r.key)
+	r.client.Del(r.ctx, r.key)
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
-	intCmd := r.client.Incr(context.Background(), r.key)
+	intCmd := r.client.Incr(r.ctx, r.key)
 	result, err := intCmd.Result()
 	if err != nil {
 		return false, err
@@ -125,7 +136,7 @@ func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
 		return false, nil
 	}
 
-	boolCmd := r.client.Expire(context.Background(), r.key, defaultKeyTTL)
+	boolCmd := r.client.PExpire(r.ctx, r.key, defaultKeyTTL)
 	_, err = boolCmd.Result()
 
 	return err == nil, err

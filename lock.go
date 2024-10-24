@@ -1,4 +1,6 @@
-package core
+package gocky
+
+import "context"
 
 type Lock interface {
 	Name() string
@@ -8,5 +10,5 @@ type Lock interface {
 }
 
 type LockFactory interface {
-	GetLock(lockName string) Lock
+	GetLock(lockName string, ctx context.Context) Lock
 }
