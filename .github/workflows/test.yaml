@@ -12,4 +12,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+
+      - if: matrix.os == 'macos-latest'
+        run: |
+          brew install docker
+          colima start
+      - run: go run ./endtoend
       - run: go test ./...
