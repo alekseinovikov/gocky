@@ -124,3 +124,30 @@ func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
 
 	assert.LessOrEqual(t, finished.Sub(started), defaultSpinLockDuration+10*time.Millisecond)
 }
+
+func TestRedisLock_Locked(t *testing.T) {
+	factory := NewRedisLockFactory(*client.Options())
+	lock := factory.GetLock("test-lock-locked", context.Background())
+
+	// Initially, the lock should not be locked
+	locked, err := lock.Locked()
+	assert.NoError(t, err)
+	assert.False(t, locked)
+
+	// Lock the lock
+	err = lock.Lock()
+	assert.NoError(t, err)
+
+	// Now, the lock should be locked
+	locked, err = lock.Locked()
+	assert.NoError(t, err)
+	assert.True(t, locked)
+
+	// Unlock the lock
+	lock.Unlock()
+
+	// The lock should not be locked anymore
+	locked, err = lock.Locked()
+	assert.NoError(t, err)
+	assert.False(t, locked)
+}

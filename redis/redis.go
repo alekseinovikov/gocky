@@ -67,6 +67,16 @@ func (r *redisLock) Name() string {
 	return r.name
 }
 
+func (r *redisLock) Locked() (bool, error) {
+	cmd := r.client.Exists(r.ctx, r.key)
+	result, err := cmd.Result()
+	if err != nil {
+		return false, err
+	}
+
+	return result == 1, nil
+}
+
 func (r *redisLock) TryLock() (bool, error) {
 	return r.tryToUpdateRedisLock()
 }
