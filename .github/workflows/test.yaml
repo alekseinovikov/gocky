@@ -7,13 +7,19 @@ jobs:
         go-version: [ 1.x.x ]
         os: [ ubuntu-latest, macos-latest, windows-latest ]
     runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
       - name: Setup Docker on macOS
         if: matrix.os == 'macos-latest'
-        uses: douglascamata/setup-docker-macos-action@v1-alpha
-      - run: go test ./...
+        uses: docker-practice/actions-setup-docker@master
+
+      - name: Test
+        run: go test ./...
