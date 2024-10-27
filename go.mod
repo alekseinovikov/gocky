@@ -3,7 +3,7 @@ module github.com/alekseinovikov/gocky
 go 1.22.5
 
 require (
-	github.com/redis/go-redis/v9 v9.6.1
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/stretchr/testify v1.9.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.34.0
 )

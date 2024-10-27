@@ -130,6 +130,7 @@ func (r *redisLock) Lock() error {
 }
 
 func (r *redisLock) Unlock() {
+	defer r.client.Del(r.ctx, r.key)
 	if r.ticker == nil {
 		return
 	}
@@ -138,9 +139,6 @@ func (r *redisLock) Unlock() {
 	r.ticker.Stop()
 	r.tickerDone <- struct{}{}
 	close(r.tickerDone)
-
-	// and remove the lock from redis
-	r.client.Del(r.ctx, r.key)
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
