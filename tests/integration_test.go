@@ -5,9 +5,10 @@ import (
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/redis"
 	goRedis "github.com/redis/go-redis/v9"
-	redisTestContainer "github.com/testcontainers/testcontainers-go/modules/redis"
+	rediscaseContainer "github.com/testcontainers/testcontainers-go/modules/redis"
 	"os"
 	"testing"
+	"time"
 )
 
 var (
@@ -16,7 +17,7 @@ var (
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-	redisContainer, err := redisTestContainer.Run(ctx, "redis:latest")
+	redisContainer, err := rediscaseContainer.Run(ctx, "redis:latest")
 	if err != nil {
 		panic("could not start redis container: " + err.Error())
 	}
@@ -48,21 +49,21 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestAllTests(t *testing.T) {
+func TestAllCases(t *testing.T) {
 	factoriesMap := map[string]gocky.LockFactory{
 		"Redis": redis.NewRedisLockFactory(*redisClient.Options()),
 	}
 
 	testCasesMap := map[string]func(t *testing.T, factory gocky.LockFactory){
-		"Name":                        caseName,
-		"InitialLockedState":          caseInitialLockedState,
-		"TryLock":                     caseTryLock,
-		"Unlock":                      caseUnlock,
-		"UnlockWithTwoLocksRequested": caseUnlockWithTwoLocksRequested,
-		"Lock":                        caseLock,
-		"GetLock_SameName":            caseFactoryGetLockSameName,
-		"GetLock_DifferentNames":      caseFactoryGetLockDifferentNames,
-		"GetLock_Concurrency":         caseFactoryGetLockConcurrency,
+		"Lock name":                            caseLockName,
+		"Initial lock status":                  caseInitialLockStatus,
+		"TryLock success":                      caseTryLockSuccess,
+		"TryLock fail":                         caseTryLockFail,
+		"Lock and Unlock sequence":             caseLockAndUnlockSequence,
+		"Lock factory same instance":           caseLockFactorySameInstance,
+		"Lock factory different instances":     caseLockFactoryDifferentInstances,
+		"Lock concurrency with two goroutines": caseLockConcurrencyWithTwoGoroutines,
+		"Lock concurrency with 100 goroutines": caseLockConcurrencyWith100Goroutines,
 	}
 
 	for factoryName, factory := range factoriesMap {
@@ -74,86 +75,146 @@ func TestAllTests(t *testing.T) {
 	}
 }
 
-func caseName(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("case", context.Background())
-	if lock.Name() != "case" {
-		t.Errorf("expected lock name to be 'case', got %s", lock.Name())
+func caseLockName(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("testLock", context.Background())
+	if lock.Name() != "testLock" {
+		t.Errorf("Expected lock name 'testLock', but got %s", lock.Name())
 	}
 }
 
-func caseInitialLockedState(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("initLock", context.Background())
-	if locked, _ := lock.Locked(); locked {
-		t.Errorf("expected lock to be initially unlocked")
+func caseInitialLockStatus(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("testLock", context.Background())
+	locked, err := lock.Locked()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if locked {
+		t.Errorf("Lock should be initially unlocked")
 	}
 }
 
-func caseTryLock(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("tryLock", context.Background())
-	if success, _ := lock.TryLock(); !success {
-		t.Errorf("expected TryLock to succeed")
+func caseTryLockSuccess(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("testLock", context.Background())
+	success, err := lock.TryLock()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
 	}
-	if locked, _ := lock.Locked(); !locked {
-		t.Errorf("expected lock to be locked after TryLock")
+	if !success {
+		t.Errorf("Expected TryLock to succeed, but it failed")
 	}
 }
 
-func caseUnlock(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("unlock", context.Background())
+func caseTryLockFail(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("testLock", context.Background())
 	_, _ = lock.TryLock()
+	success, err := lock.TryLock()
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if success {
+		t.Errorf("Expected TryLock to fail on already locked lock, but it succeeded")
+	}
+}
+
+func caseLockAndUnlockSequence(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("testLock", context.Background())
+	err := lock.Lock()
+	if err != nil {
+		t.Errorf("Unexpected error during Lock(): %v", err)
+	}
+
+	locked, err := lock.Locked()
+	if err != nil {
+		t.Errorf("Unexpected error during Locked(): %v", err)
+	}
+	if !locked {
+		t.Errorf("Lock should be locked after calling Lock()")
+	}
+
 	lock.Unlock()
-	if locked, _ := lock.Locked(); locked {
-		t.Errorf("expected lock to be unlocked after Unlock")
+	locked, err = lock.Locked()
+	if err != nil {
+		t.Errorf("Unexpected error during Locked() after Unlock(): %v", err)
+	}
+	if locked {
+		t.Errorf("Lock should be unlocked after calling Unlock()")
 	}
 }
 
-func caseUnlockWithTwoLocksRequested(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("unlock", context.Background())
-	lock2 := factory.GetLock("unlock", context.Background())
-	_, _ = lock.TryLock()
-	lock2.Unlock()
-	if locked, _ := lock.Locked(); locked {
-		t.Errorf("expected lock to be unlocked after Unlock")
-	}
-}
-
-func caseLock(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("lock", context.Background())
-	_ = lock.Lock()
-	if locked, _ := lock.Locked(); !locked {
-		t.Errorf("expected lock to be locked after Lock")
-	}
-}
-
-func caseFactoryGetLockSameName(t *testing.T, factory gocky.LockFactory) {
-	ctx := context.Background()
-	lock1 := factory.GetLock("lock1", ctx)
-	lock2 := factory.GetLock("lock1", ctx)
+func caseLockFactorySameInstance(t *testing.T, factory gocky.LockFactory) {
+	lock1 := factory.GetLock("testLock", context.Background())
+	lock2 := factory.GetLock("testLock", context.Background())
 	if lock1 != lock2 {
-		t.Errorf("expected GetLock to return the same lock instance for the same name")
+		t.Errorf("Expected GetLock to return the same instance for the same lock name, but got different instances")
 	}
 }
 
-func caseFactoryGetLockDifferentNames(t *testing.T, factory gocky.LockFactory) {
-	ctx := context.Background()
-	lock1 := factory.GetLock("lock1", ctx)
-	lock2 := factory.GetLock("lock2", ctx)
+func caseLockFactoryDifferentInstances(t *testing.T, factory gocky.LockFactory) {
+	lock1 := factory.GetLock("testLock1", context.Background())
+	lock2 := factory.GetLock("testLock2", context.Background())
 	if lock1 == lock2 {
-		t.Errorf("expected GetLock to return different lock instances for different names")
+		t.Errorf("Expected GetLock to return different instances for different lock names, but got the same instance")
 	}
 }
 
-func caseFactoryGetLockConcurrency(t *testing.T, factory gocky.LockFactory) {
-	ctx := context.Background()
-	lock1 := factory.GetLock("lock1", ctx)
-	lock2 := factory.GetLock("lock1", ctx)
-	lock3 := factory.GetLock("lock2", ctx)
+func caseLockConcurrencyWithTwoGoroutines(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("concurrentLock", context.Background())
+	success := make(chan bool)
 
-	if lock1 == lock3 {
-		t.Errorf("expected GetLock to return different lock instances for different names")
+	go func() {
+		_ = lock.Lock()
+		time.Sleep(50 * time.Millisecond)
+		lock.Unlock()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	go func() {
+		locked, err := lock.TryLock()
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+
+		success <- locked
+	}()
+
+	result := <-success
+
+	if result {
+		t.Errorf("Expected TryLock to fail on locked lock, but it succeeded")
+	}
+}
+
+func caseLockConcurrencyWith100Goroutines(t *testing.T, factory gocky.LockFactory) {
+	success := make(chan bool)
+	for i := 0; i < 100; i++ {
+		go func() {
+			lock := factory.GetLock("concurrentLock100", context.Background())
+			locked, err := lock.TryLock()
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if locked {
+				defer lock.Unlock()
+			}
+
+			success <- locked
+		}()
 	}
 
-	if lock1 != lock2 {
-		t.Errorf("expected GetLock to return the same lock instance for the same name")
+	// We should make sure every goroutine reached chain send
+	time.Sleep(50 * time.Millisecond)
+
+	successCounter := 0
+	for i := 0; i < 100; i++ {
+		result := <-success
+		if result {
+			successCounter++
+		}
+	}
+
+	if successCounter > 1 {
+		t.Errorf("Expected only one TryLock to succeed, but got %d successes", successCounter)
 	}
 }
