@@ -50,19 +50,19 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewRedisLockFactory(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	assert.NotNil(t, factory)
 }
 
 func TestRedisLockFactory_NewLock(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock", context.Background())
 	assert.NotNil(t, lock)
 	assert.Equal(t, "test-lock", lock.Name())
 }
 
 func TestRedisLock_TryLock(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock", context.Background())
 
 	locked, err := lock.TryLock()
@@ -75,7 +75,7 @@ func TestRedisLock_TryLock(t *testing.T) {
 }
 
 func TestRedisLock_Lock_Unlock(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock", context.Background())
 
 	err := lock.Lock()
@@ -89,7 +89,7 @@ func TestRedisLock_Lock_Unlock(t *testing.T) {
 }
 
 func TestRedisLock_Expire(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock", context.Background())
 
 	err := lock.Lock()
@@ -108,7 +108,7 @@ func TestRedisLock_Expire(t *testing.T) {
 }
 
 func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock-measure", context.Background())
 
 	err := lock.Lock()
@@ -126,7 +126,7 @@ func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
 }
 
 func TestRedisLock_Locked(t *testing.T) {
-	factory := NewRedisLockFactory(*client.Options())
+	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock-locked", context.Background())
 
 	// Initially, the lock should not be locked

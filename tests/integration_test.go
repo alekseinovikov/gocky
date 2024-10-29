@@ -41,8 +41,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestAllCases(t *testing.T) {
+	redisLockFactory, err := redis.NewRedisLockFactory(*redisClient.Options())
+	if err != nil {
+		t.Fatalf("Failed to create Redis lock factory: %v", err)
+	}
+
 	factoriesMap := map[string]gocky.LockFactory{
-		"Redis": redis.NewRedisLockFactory(*redisClient.Options()),
+		"Redis": redisLockFactory,
 		//"PostgreSQL": postgresql.NewPostgresqlLockFactory(postgresDb),
 	}
 
@@ -86,7 +91,7 @@ func caseInitialLockStatus(t *testing.T, factory gocky.LockFactory) {
 }
 
 func caseTryLockSuccess(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("testLock", context.Background())
+	lock := factory.GetLock("tryLockSuccess", context.Background())
 	success, err := lock.TryLock()
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -97,7 +102,7 @@ func caseTryLockSuccess(t *testing.T, factory gocky.LockFactory) {
 }
 
 func caseTryLockFail(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("testLock", context.Background())
+	lock := factory.GetLock("tryLockFail", context.Background())
 	_, _ = lock.TryLock()
 	success, err := lock.TryLock()
 	if err != nil {
@@ -106,10 +111,12 @@ func caseTryLockFail(t *testing.T, factory gocky.LockFactory) {
 	if success {
 		t.Errorf("Expected TryLock to fail on already locked lock, but it succeeded")
 	}
+
+	lock.Unlock()
 }
 
 func caseLockAndUnlockSequence(t *testing.T, factory gocky.LockFactory) {
-	lock := factory.GetLock("testLock", context.Background())
+	lock := factory.GetLock("lockAndUnlockSequence", context.Background())
 	err := lock.Lock()
 	if err != nil {
 		t.Errorf("Unexpected error during Lock(): %v", err)
@@ -134,16 +141,16 @@ func caseLockAndUnlockSequence(t *testing.T, factory gocky.LockFactory) {
 }
 
 func caseLockFactorySameInstance(t *testing.T, factory gocky.LockFactory) {
-	lock1 := factory.GetLock("testLock", context.Background())
-	lock2 := factory.GetLock("testLock", context.Background())
+	lock1 := factory.GetLock("sameInstance", context.Background())
+	lock2 := factory.GetLock("sameInstance", context.Background())
 	if lock1 != lock2 {
 		t.Errorf("Expected GetLock to return the same instance for the same lock name, but got different instances")
 	}
 }
 
 func caseLockFactoryDifferentInstances(t *testing.T, factory gocky.LockFactory) {
-	lock1 := factory.GetLock("testLock1", context.Background())
-	lock2 := factory.GetLock("testLock2", context.Background())
+	lock1 := factory.GetLock("differentInstance1", context.Background())
+	lock2 := factory.GetLock("differentInstance2", context.Background())
 	if lock1 == lock2 {
 		t.Errorf("Expected GetLock to return different instances for different lock names, but got the same instance")
 	}

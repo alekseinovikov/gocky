@@ -27,12 +27,12 @@ type redisLockFactory struct {
 	lockCache common.LockCache
 }
 
-func NewRedisLockFactory(options redis.Options) gocky.LockFactory {
+func NewRedisLockFactory(options redis.Options) (gocky.LockFactory, error) {
 	client := redis.NewClient(&options)
 	return &redisLockFactory{
 		client:    client,
 		lockCache: common.NewLockCache(),
-	}
+	}, nil
 }
 
 func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) gocky.Lock {
