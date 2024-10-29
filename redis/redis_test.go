@@ -56,14 +56,14 @@ func TestNewRedisLockFactory(t *testing.T) {
 
 func TestRedisLockFactory_NewLock(t *testing.T) {
 	factory, _ := NewRedisLockFactory(*client.Options())
-	lock := factory.GetLock("test-lock", context.Background())
+	lock := factory.GetLock("test-lock1", context.Background())
 	assert.NotNil(t, lock)
-	assert.Equal(t, "test-lock", lock.Name())
+	assert.Equal(t, "test-lock1", lock.Name())
 }
 
 func TestRedisLock_TryLock(t *testing.T) {
 	factory, _ := NewRedisLockFactory(*client.Options())
-	lock := factory.GetLock("test-lock", context.Background())
+	lock := factory.GetLock("test-lock2", context.Background())
 
 	locked, err := lock.TryLock()
 	assert.NoError(t, err)
@@ -76,7 +76,7 @@ func TestRedisLock_TryLock(t *testing.T) {
 
 func TestRedisLock_Lock_Unlock(t *testing.T) {
 	factory, _ := NewRedisLockFactory(*client.Options())
-	lock := factory.GetLock("test-lock", context.Background())
+	lock := factory.GetLock("test-lock3", context.Background())
 
 	err := lock.Lock()
 	assert.NoError(t, err)
@@ -90,7 +90,7 @@ func TestRedisLock_Lock_Unlock(t *testing.T) {
 
 func TestRedisLock_Expire(t *testing.T) {
 	factory, _ := NewRedisLockFactory(*client.Options())
-	lock := factory.GetLock("test-lock", context.Background())
+	lock := factory.GetLock("test-lock4", context.Background())
 
 	err := lock.Lock()
 	assert.NoError(t, err)

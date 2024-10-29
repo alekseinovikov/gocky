@@ -75,7 +75,13 @@ func (r *redisLock) Locked() (bool, error) {
 }
 
 func (r *redisLock) TryLock() (bool, error) {
-	return r.tryToUpdateRedisLock()
+	locked, err := r.tryToUpdateRedisLock()
+	if err != nil || !locked {
+		return locked, err
+	}
+
+	r.scheduleLockUpdater()
+	return true, nil
 }
 
 func (r *redisLock) Lock() error {
@@ -98,23 +104,7 @@ func (r *redisLock) Lock() error {
 		}
 	}
 
-	// once lock is acquired we are starting a ticker to keep it alive
-	r.ticker = time.NewTicker(time.Duration(defaultKeyTTL / 2))
-	r.tickerDone = make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-r.tickerDone:
-				return
-			case <-r.ticker.C:
-				_, _ = r.tryToUpdateRedisLock()
-			case <-r.ctx.Done():
-				r.Unlock()
-				return
-			}
-		}
-	}()
-
+	r.scheduleLockUpdater()
 	return nil
 }
 
@@ -141,4 +131,23 @@ func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
 	}
 
 	return false, nil
+}
+
+func (r *redisLock) scheduleLockUpdater() {
+	// once lock is acquired we are starting a ticker to keep it alive
+	r.ticker = time.NewTicker(time.Duration(defaultKeyTTL / 2))
+	r.tickerDone = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-r.tickerDone:
+				return
+			case <-r.ticker.C:
+				_, _ = r.tryToUpdateRedisLock()
+			case <-r.ctx.Done():
+				r.Unlock()
+				return
+			}
+		}
+	}()
 }

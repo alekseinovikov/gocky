@@ -6,6 +6,7 @@ import (
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/redis"
 	goRedis "github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"os"
 	"testing"
@@ -61,6 +62,7 @@ func TestAllCases(t *testing.T) {
 		"Lock factory different instances":     caseLockFactoryDifferentInstances,
 		"Lock concurrency with two goroutines": caseLockConcurrencyWithTwoGoroutines,
 		"Lock concurrency with 100 goroutines": caseLockConcurrencyWith100Goroutines,
+		"TryLock and Unlock in sequence":       caseTryLockAndUnlockInSequence,
 	}
 
 	for factoryName, factory := range factoriesMap {
@@ -184,26 +186,46 @@ func caseLockConcurrencyWithTwoGoroutines(t *testing.T, factory gocky.LockFactor
 	}
 }
 
+func caseTryLockAndUnlockInSequence(t *testing.T, factory gocky.LockFactory) {
+	lock := factory.GetLock("tryLockAndUnlockInSequence", context.Background())
+	success, err := lock.TryLock()
+
+	assert.NoError(t, err)
+	assert.True(t, success, "TryLock should succeed")
+
+	locked, err := lock.Locked()
+	assert.NoError(t, err)
+	assert.True(t, locked, "Lock should be locked after TryLock()")
+
+	success, err = lock.TryLock()
+	assert.NoError(t, err)
+	assert.False(t, success, "Expected TryLock to fail on already locked lock, but it succeeded")
+}
+
 func caseLockConcurrencyWith100Goroutines(t *testing.T, factory gocky.LockFactory) {
+	started := make(chan bool)
 	success := make(chan bool)
 	for i := 0; i < 100; i++ {
 		go func() {
+			started <- true
 			lock := factory.GetLock("concurrentLock100", context.Background())
 			locked, err := lock.TryLock()
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
 
-			if locked {
-				defer lock.Unlock()
-			}
-
 			success <- locked
+
+			if locked {
+				lock.Unlock()
+			}
 		}()
 	}
 
-	// We should make sure every goroutine reached chain send
-	time.Sleep(50 * time.Millisecond)
+	// make sure all goroutines started
+	for i := 0; i < 100; i++ {
+		<-started
+	}
 
 	successCounter := 0
 	for i := 0; i < 100; i++ {
