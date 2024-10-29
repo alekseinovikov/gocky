@@ -2,10 +2,11 @@ package tests
 
 import (
 	"context"
+	"database/sql"
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/redis"
 	goRedis "github.com/redis/go-redis/v9"
-	rediscaseContainer "github.com/testcontainers/testcontainers-go/modules/redis"
+	"github.com/testcontainers/testcontainers-go"
 	"os"
 	"testing"
 	"time"
@@ -13,34 +14,24 @@ import (
 
 var (
 	redisClient *goRedis.Client
+	postgresDb  *sql.DB
 )
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-	redisContainer, err := rediscaseContainer.Run(ctx, "redis:latest")
-	if err != nil {
-		panic("could not start redis container: " + err.Error())
-	}
 
-	host, err := redisContainer.Host(ctx)
-	if err != nil {
-		panic("could not get redis container connection host: " + err.Error())
-	}
+	var redisContainer testcontainers.Container
+	redisContainer, redisClient = startRedisContainer(ctx)
 
-	port, err := redisContainer.MappedPort(ctx, "6379")
-	if err != nil {
-		panic("could not get redis container connection port: " + err.Error())
-	}
-
-	options := &goRedis.Options{
-		Addr: host + ":" + port.Port(),
-	}
-	redisClient = goRedis.NewClient(options)
-	redisClient.FlushDB(ctx)
+	var postgresContainer testcontainers.Container
+	postgresContainer, postgresDb = startPostgresContainer(ctx)
 
 	teardown := func() {
 		_ = redisClient.Close()
-		_ = redisContainer.Terminate(ctx)
+		_ = postgresDb.Close()
+
+		_ = testcontainers.TerminateContainer(redisContainer)
+		_ = testcontainers.TerminateContainer(postgresContainer)
 	}
 
 	code := m.Run()
@@ -52,6 +43,7 @@ func TestMain(m *testing.M) {
 func TestAllCases(t *testing.T) {
 	factoriesMap := map[string]gocky.LockFactory{
 		"Redis": redis.NewRedisLockFactory(*redisClient.Options()),
+		//"PostgreSQL": postgresql.NewPostgresqlLockFactory(postgresDb),
 	}
 
 	testCasesMap := map[string]func(t *testing.T, factory gocky.LockFactory){

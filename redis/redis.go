@@ -3,8 +3,8 @@ package redis
 import (
 	"context"
 	"github.com/alekseinovikov/gocky"
+	"github.com/alekseinovikov/gocky/common"
 	"github.com/redis/go-redis/v9"
-	"sync"
 	"time"
 )
 
@@ -23,38 +23,27 @@ var (
 )
 
 type redisLockFactory struct {
-	client      *redis.Client
-	cache       map[string]gocky.Lock
-	cacheRWLock sync.RWMutex
+	client    *redis.Client
+	lockCache common.LockCache
 }
 
 func NewRedisLockFactory(options redis.Options) gocky.LockFactory {
 	client := redis.NewClient(&options)
 	return &redisLockFactory{
-		client: client,
-		cache:  make(map[string]gocky.Lock),
+		client:    client,
+		lockCache: common.NewLockCache(),
 	}
 }
 
 func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) gocky.Lock {
-	r.cacheRWLock.RLock()
-	if lock, ok := r.cache[lockName]; ok {
-		r.cacheRWLock.RUnlock()
-		return lock
-	}
-	r.cacheRWLock.RUnlock()
-
-	r.cacheRWLock.Lock()
-	defer r.cacheRWLock.Unlock()
-
-	newLock := &redisLock{
-		client: r.client,
-		ctx:    ctx,
-		name:   lockName,
-		key:    generateKey(lockName),
-	}
-	r.cache[lockName] = newLock
-	return newLock
+	return r.lockCache.GetLock(lockName, ctx, func(ctx context.Context) gocky.Lock {
+		return &redisLock{
+			client: r.client,
+			ctx:    ctx,
+			name:   lockName,
+			key:    generateKey(lockName),
+		}
+	})
 }
 
 // generate key for lock
