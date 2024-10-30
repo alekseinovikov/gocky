@@ -103,7 +103,6 @@ func (r *redisLock) Lock() error {
 		}
 	}
 
-	r.scheduleLockUpdater()
 	return nil
 }
 
@@ -131,6 +130,7 @@ func (r *redisLock) scheduleLockUpdater() {
 				_, err := r.tryToUpdateRedisLock()
 				if err != nil {
 					ticker.Stop()
+					close(r.tickerStop)
 					return
 				}
 			}
