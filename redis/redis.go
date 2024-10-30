@@ -10,8 +10,8 @@ import (
 
 var (
 	keyPrefix               = "gocky:lock:"
-	defaultKeyTTL           = 100 // In milliseconds
-	defaultSpinLockDuration = time.Duration(defaultKeyTTL/2) * time.Millisecond
+	defaultKeyTTLMillis     = 10000                                                   // In milliseconds - 10 secs
+	defaultSpinLockDuration = time.Duration(defaultKeyTTLMillis/2) * time.Millisecond // Every 5 seconds
 
 	lockAcquireScript = `
 		if redis.call("EXISTS", KEYS[1]) == 1 then
@@ -56,8 +56,7 @@ type redisLock struct {
 	ctx        context.Context
 	key        string
 	client     *redis.Client
-	ticker     *time.Ticker
-	tickerDone chan struct{}
+	tickerStop chan struct{}
 }
 
 func (r *redisLock) Name() string {
@@ -77,7 +76,7 @@ func (r *redisLock) Locked() (bool, error) {
 func (r *redisLock) TryLock() (bool, error) {
 	locked, err := r.tryToUpdateRedisLock()
 	if err != nil || !locked {
-		return locked, err
+		return false, err
 	}
 
 	r.scheduleLockUpdater()
@@ -110,18 +109,37 @@ func (r *redisLock) Lock() error {
 
 func (r *redisLock) Unlock() {
 	defer r.client.Del(r.ctx, r.key)
-	if r.ticker == nil {
+	if r.tickerStop == nil {
 		return
 	}
 
-	// we stop the ticker
-	r.ticker.Stop()
-	r.tickerDone <- struct{}{}
-	close(r.tickerDone)
+	r.tickerStop <- struct{}{}
+	close(r.tickerStop)
+}
+
+func (r *redisLock) scheduleLockUpdater() {
+	r.tickerStop = make(chan struct{})
+	ticker := time.NewTicker(defaultSpinLockDuration)
+
+	go func() {
+		for {
+			select {
+			case <-r.tickerStop:
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				_, err := r.tryToUpdateRedisLock()
+				if err != nil {
+					ticker.Stop()
+					return
+				}
+			}
+		}
+	}()
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
-	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, defaultKeyTTL)
+	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, defaultKeyTTLMillis)
 	if result.Err() != nil {
 		return false, result.Err()
 	}
@@ -131,23 +149,4 @@ func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
 	}
 
 	return false, nil
-}
-
-func (r *redisLock) scheduleLockUpdater() {
-	// once lock is acquired we are starting a ticker to keep it alive
-	r.ticker = time.NewTicker(time.Duration(defaultKeyTTL / 2))
-	r.tickerDone = make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-r.tickerDone:
-				return
-			case <-r.ticker.C:
-				_, _ = r.tryToUpdateRedisLock()
-			case <-r.ctx.Done():
-				r.Unlock()
-				return
-			}
-		}
-	}()
 }

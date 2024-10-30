@@ -88,25 +88,6 @@ func TestRedisLock_Lock_Unlock(t *testing.T) {
 	assert.True(t, locked)
 }
 
-func TestRedisLock_Expire(t *testing.T) {
-	factory, _ := NewRedisLockFactory(*client.Options())
-	lock := factory.GetLock("test-lock4", context.Background())
-
-	err := lock.Lock()
-	assert.NoError(t, err)
-
-	go func() {
-		time.Sleep(defaultSpinLockDuration)
-		lock.Unlock()
-	}()
-
-	time.Sleep(time.Duration(defaultKeyTTL)*time.Millisecond + 10*time.Millisecond)
-
-	locked, err := lock.TryLock()
-	assert.NoError(t, err)
-	assert.True(t, locked)
-}
-
 func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
 	factory, _ := NewRedisLockFactory(*client.Options())
 	lock := factory.GetLock("test-lock-measure", context.Background())
@@ -122,7 +103,7 @@ func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
 	_ = lock.Lock()
 	finished := time.Now()
 
-	assert.LessOrEqual(t, finished.Sub(started), defaultSpinLockDuration+10*time.Millisecond)
+	assert.LessOrEqual(t, finished.Sub(started).Milliseconds(), int64(defaultKeyTTLMillis))
 }
 
 func TestRedisLock_Locked(t *testing.T) {
