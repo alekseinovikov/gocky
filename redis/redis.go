@@ -5,6 +5,7 @@ import (
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/common"
 	"github.com/redis/go-redis/v9"
+	"sync"
 	"time"
 )
 
@@ -52,6 +53,7 @@ func generateKey(lockName string) string {
 }
 
 type redisLock struct {
+	mutex      sync.Mutex
 	name       string
 	ctx        context.Context
 	key        string
@@ -74,6 +76,9 @@ func (r *redisLock) Locked() (bool, error) {
 }
 
 func (r *redisLock) TryLock() (bool, error) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
 	locked, err := r.tryToUpdateRedisLock()
 	if err != nil || !locked {
 		return false, err
@@ -107,7 +112,10 @@ func (r *redisLock) Lock() error {
 }
 
 func (r *redisLock) Unlock() {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 	defer r.client.Del(r.ctx, r.key)
+
 	if r.tickerStop == nil {
 		return
 	}
