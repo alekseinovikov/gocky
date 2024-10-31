@@ -18,5 +18,5 @@ type Lock interface {
 type LockFactory interface {
 
 	// GetLock returns a lock with the given name, may return a cached lock
-	GetLock(lockName string, ctx context.Context) Lock
+	GetLock(lockName string, ctx context.Context) (Lock, error)
 }

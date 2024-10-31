@@ -36,15 +36,15 @@ func NewRedisLockFactory(options redis.Options) (gocky.LockFactory, error) {
 	}, nil
 }
 
-func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) gocky.Lock {
-	return r.lockCache.GetLock(lockName, ctx, func(ctx context.Context) gocky.Lock {
+func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) (gocky.Lock, error) {
+	return r.lockCache.GetLock(lockName, ctx, func(ctx context.Context) (gocky.Lock, error) {
 		return &redisLock{
 			client: r.client,
 			ctx:    ctx,
 			name:   lockName,
 			key:    generateKey(lockName),
 			ticker: common.NewTicker(defaultSpinLockDuration),
-		}
+		}, nil
 	})
 }
 

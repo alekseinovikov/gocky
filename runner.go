@@ -11,8 +11,12 @@ func NewUnderLockRunner(lockFactory LockFactory) *UnderLockRunner {
 }
 
 func (r *UnderLockRunner) RunWaitingForLock(lockName string, ctx context.Context, f func()) error {
-	lock := r.lockFactory.GetLock(lockName, ctx)
-	err := lock.Lock()
+	lock, err := r.lockFactory.GetLock(lockName, ctx)
+	if err != nil {
+		return err
+	}
+
+	err = lock.Lock()
 	if err != nil {
 		return err
 	}
@@ -24,7 +28,11 @@ func (r *UnderLockRunner) RunWaitingForLock(lockName string, ctx context.Context
 }
 
 func (r *UnderLockRunner) RunIfNotLocked(lockName string, ctx context.Context, f func()) error {
-	lock := r.lockFactory.GetLock(lockName, ctx)
+	lock, err := r.lockFactory.GetLock(lockName, ctx)
+	if err != nil {
+		return err
+	}
+
 	ok, err := lock.TryLock()
 	if err != nil {
 		return err
