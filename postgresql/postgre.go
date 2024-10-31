@@ -6,19 +6,19 @@ import (
 	"errors"
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/common"
+	"strconv"
 	"sync"
 	"time"
 )
 
-// As we relly on the client node time - we should keep in mind the time difference between the nodes
-// So we use high TTL and refresh the lock every 30 seconds
 var (
-	defaultLockTTL          = 60 * time.Second
-	defaultSpinLockDuration = 30 * time.Second
+	defaultLockTTL                 = 10 * time.Second
+	defaultSpinLockDuration        = 5 * time.Second
+	defaultLockTTLAsIntervalString = strconv.Itoa(int(defaultLockTTL.Seconds())) + " seconds"
 )
 
 func initDbSchema(db *sql.DB) error {
-	createTableSql := "CREATE TABLE IF NOT EXISTS locks (name VARCHAR(255) PRIMARY KEY, acquired BOOLEAN, acquired_at TIMESTAMP)"
+	createTableSql := "CREATE TABLE IF NOT EXISTS gocky_locks (name VARCHAR(255) PRIMARY KEY, acquired BOOLEAN, acquired_at TIMESTAMP)"
 	_, err := db.Exec(createTableSql)
 
 	return err
@@ -43,7 +43,7 @@ func NewPostgresqlLockFactory(db *sql.DB) (gocky.LockFactory, error) {
 
 func (p *postgresqlLockFactory) GetLock(lockName string, ctx context.Context) (gocky.Lock, error) {
 	return p.lockCache.GetLock(lockName, ctx, func(ctx context.Context) (gocky.Lock, error) {
-		lockCreationSql := "INSERT INTO locks (name, acquired, acquired_at) VALUES ($1, false, now()) ON CONFLICT (name) DO NOTHING"
+		lockCreationSql := "INSERT INTO gocky_locks (name, acquired, acquired_at) VALUES ($1, false, CURRENT_TIMESTAMP) ON CONFLICT (name) DO NOTHING"
 		_, err := p.db.Exec(lockCreationSql, lockName)
 		if err != nil {
 			return nil, err
@@ -71,12 +71,11 @@ func (p *postgresqlLock) Name() string {
 }
 
 func (p *postgresqlLock) Locked() (bool, error) {
-	maxTimeAcquired := time.Now().Add(-defaultLockTTL)
 	row := p.db.QueryRow(
-		`SELECT l.acquired FROM locks as l 
-                  WHERE l.name = $1 AND l.acquired_at > $2`,
+		`SELECT acquired FROM gocky_locks 
+                  WHERE name = $1 
+                    AND acquired_at > (CURRENT_TIMESTAMP - interval '`+defaultLockTTLAsIntervalString+`')`,
 		p.name,
-		maxTimeAcquired,
 	)
 
 	var acquired bool
@@ -144,11 +143,27 @@ func (p *postgresqlLock) scheduleLockUpdater() {
 }
 
 func (p *postgresqlLock) tryToUpdatePostgresqlLock() (bool, error) {
-	_ = "UPDATE locks SET acquired = true, acquired_at = now() WHERE name = $1 AND (acquired IS FALSE OR "
-	panic("implement me")
+	updateSql := `UPDATE gocky_locks 
+					SET acquired = true, acquired_at = CURRENT_TIMESTAMP 
+             		WHERE name = $1 
+             		  AND (acquired IS FALSE 
+             		           OR acquired_at < CURRENT_TIMESTAMP - interval '` + defaultLockTTLAsIntervalString + `')`
+	result, err := p.db.Exec(updateSql, p.name)
+	if err != nil {
+		return false, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+
+	return rowsAffected == 1, nil
 }
 
 func (p *postgresqlLock) tryToReleasePostgresqlLock() {
-	//TODO implement me
-	panic("implement")
+	updateSql := `UPDATE gocky_locks 
+					SET acquired = false 
+					WHERE name = $1`
+	_, _ = p.db.Exec(updateSql, p.name)
 }

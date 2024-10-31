@@ -55,9 +55,19 @@ func startPostgresContainer(ctx context.Context) (*postgres.PostgresContainer, *
 		panic("could not start postgres container: " + err.Error())
 	}
 
-	db, err := sql.Open("postgres", postgresContainer.MustConnectionString(ctx))
+	connectionString, err := postgresContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		panic("could not get postgres container connection string: " + err.Error())
+	}
+
+	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		panic("could not connect to postgres container: " + err.Error())
+	}
+
+	err = db.Ping()
+	if err != nil {
+		panic("could not ping to postgres container: " + err.Error())
 	}
 
 	return postgresContainer, db

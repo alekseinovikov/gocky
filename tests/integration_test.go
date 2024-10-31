@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"github.com/alekseinovikov/gocky"
+	"github.com/alekseinovikov/gocky/postgresql"
 	"github.com/alekseinovikov/gocky/redis"
 	goRedis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -42,13 +43,14 @@ func TestMain(m *testing.M) {
 
 func TestAllCases(t *testing.T) {
 	redisLockFactory, err := redis.NewRedisLockFactory(*redisClient.Options())
-	if err != nil {
-		t.Fatalf("Failed to create Redis lock factory: %v", err)
-	}
+	assert.NoError(t, err)
+
+	postgresqlFactory, err := postgresql.NewPostgresqlLockFactory(postgresDb)
+	assert.NoError(t, err)
 
 	factoriesMap := map[string]gocky.LockFactory{
-		"Redis": redisLockFactory,
-		//"PostgreSQL": postgresql.NewPostgresqlLockFactory(postgresDb),
+		"Redis":      redisLockFactory,
+		"PostgreSQL": postgresqlFactory,
 	}
 
 	testCasesMap := map[string]func(t *testing.T, factory gocky.LockFactory){
