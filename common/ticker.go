@@ -18,6 +18,10 @@ func NewTicker(refresh time.Duration) *Ticker {
 }
 
 func (t *Ticker) Start(action func() error) {
+	if t.stopChannel != nil {
+		return
+	}
+
 	t.stopChannel = make(chan struct{})
 	t.stoppedChannel = make(chan struct{})
 	ticker := time.NewTicker(t.refresh)
