@@ -137,13 +137,13 @@ func (r *redisLock) Unlock() {
 
 func (r *redisLock) scheduleLockUpdater() {
 	r.ticker.Start(func() error {
-		_, err := r.tryToUpdateRedisLock()
-		return err
+		return r.prolongLock()
 	})
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
-	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, r.config.TTL.Milliseconds())
+	milliseconds := r.config.TTL.Milliseconds()
+	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, milliseconds)
 	if result.Err() != nil {
 		return false, result.Err()
 	}
@@ -153,4 +153,9 @@ func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
 	}
 
 	return false, nil
+}
+
+func (r *redisLock) prolongLock() error {
+	expire := r.client.Expire(r.ctx, r.key, r.config.TTL)
+	return expire.Err()
 }

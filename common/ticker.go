@@ -1,10 +1,14 @@
 package common
 
-import "time"
+import (
+	"log"
+	"time"
+)
 
 type Ticker struct {
-	stopChannel chan struct{}
-	refresh     time.Duration
+	stoppedChannel chan struct{}
+	stopChannel    chan struct{}
+	refresh        time.Duration
 }
 
 func NewTicker(refresh time.Duration) *Ticker {
@@ -15,6 +19,7 @@ func NewTicker(refresh time.Duration) *Ticker {
 
 func (t *Ticker) Start(action func() error) {
 	t.stopChannel = make(chan struct{})
+	t.stoppedChannel = make(chan struct{})
 	ticker := time.NewTicker(t.refresh)
 
 	go func() {
@@ -22,12 +27,16 @@ func (t *Ticker) Start(action func() error) {
 			select {
 			case <-t.stopChannel:
 				ticker.Stop()
+				t.stopChannel = nil
+				t.stoppedChannel <- struct{}{}
 				return
 			case <-ticker.C:
 				err := action()
 				if err != nil {
 					ticker.Stop()
-					close(t.stopChannel)
+					t.stopChannel = nil
+					t.stoppedChannel = nil
+					log.Default().Println("Error in ticker action: ", err)
 					return
 				}
 			}
@@ -41,5 +50,5 @@ func (t *Ticker) Stop() {
 	}
 
 	t.stopChannel <- struct{}{}
-	close(t.stopChannel)
+	<-t.stoppedChannel
 }
