@@ -11,8 +11,8 @@ import (
 
 var (
 	keyPrefix               = "gocky:lock:"
-	defaultKeyTTLMillis     = 10000                                                   // In milliseconds - 10 secs
-	defaultSpinLockDuration = time.Duration(defaultKeyTTLMillis/2) * time.Millisecond // Every 5 seconds
+	defaultKeyTTLMillis     = 10 * time.Second
+	defaultSpinLockDuration = 5 * time.Second
 
 	lockAcquireScript = `
 		if redis.call("EXISTS", KEYS[1]) == 1 then
@@ -36,14 +36,28 @@ func NewRedisLockFactory(options redis.Options) (gocky.LockFactory, error) {
 	}, nil
 }
 
-func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) (gocky.Lock, error) {
+func (r *redisLockFactory) GetLock(
+	lockName string,
+	ctx context.Context,
+	options ...func(config *gocky.Config),
+) (gocky.Lock, error) {
 	return r.lockCache.GetLock(lockName, ctx, func(ctx context.Context) (gocky.Lock, error) {
+		config := &gocky.Config{
+			TTL:                 defaultKeyTTLMillis,
+			LockRefreshInterval: defaultSpinLockDuration,
+		}
+
+		for _, option := range options {
+			option(config)
+		}
+
 		return &redisLock{
 			client: r.client,
 			ctx:    ctx,
 			name:   lockName,
 			key:    generateKey(lockName),
-			ticker: common.NewTicker(defaultSpinLockDuration),
+			ticker: common.NewTicker(config.LockRefreshInterval),
+			config: config,
 		}, nil
 	})
 }
@@ -57,6 +71,7 @@ type redisLock struct {
 	ctx    context.Context
 	name   string
 	key    string
+	config *gocky.Config
 	mutex  sync.Mutex
 	client *redis.Client
 	ticker *common.Ticker
@@ -101,7 +116,7 @@ func (r *redisLock) Lock() error {
 		case <-r.ctx.Done():
 			return r.ctx.Err()
 		default:
-			time.Sleep(defaultSpinLockDuration)
+			time.Sleep(r.config.LockRefreshInterval)
 			locked, err = r.TryLock()
 			if err != nil {
 				return err
@@ -128,7 +143,7 @@ func (r *redisLock) scheduleLockUpdater() {
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
-	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, defaultKeyTTLMillis)
+	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, r.config.TTL.Milliseconds())
 	if result.Err() != nil {
 		return false, result.Err()
 	}

@@ -41,7 +41,11 @@ func NewPostgresqlLockFactory(db *sql.DB) (gocky.LockFactory, error) {
 	}, nil
 }
 
-func (p *postgresqlLockFactory) GetLock(lockName string, ctx context.Context) (gocky.Lock, error) {
+func (p *postgresqlLockFactory) GetLock(
+	lockName string,
+	ctx context.Context,
+	options ...func(config *gocky.Config),
+) (gocky.Lock, error) {
 	return p.lockCache.GetLock(lockName, ctx, func(ctx context.Context) (gocky.Lock, error) {
 		lockCreationSql := "INSERT INTO gocky_locks (name, acquired, acquired_at) VALUES ($1, false, CURRENT_TIMESTAMP) ON CONFLICT (name) DO NOTHING"
 		_, err := p.db.Exec(lockCreationSql, lockName)
@@ -49,9 +53,19 @@ func (p *postgresqlLockFactory) GetLock(lockName string, ctx context.Context) (g
 			return nil, err
 		}
 
+		config := &gocky.Config{
+			TTL:                 defaultLockTTL,
+			LockRefreshInterval: defaultSpinLockDuration,
+		}
+
+		for _, option := range options {
+			option(config)
+		}
+
 		return &postgresqlLock{
 			db:     p.db,
 			ctx:    ctx,
+			config: config,
 			name:   lockName,
 			ticker: common.NewTicker(defaultSpinLockDuration),
 		}, nil
@@ -61,6 +75,7 @@ func (p *postgresqlLockFactory) GetLock(lockName string, ctx context.Context) (g
 type postgresqlLock struct {
 	name   string
 	mutex  sync.Mutex
+	config *gocky.Config
 	ctx    context.Context
 	db     *sql.DB
 	ticker *common.Ticker

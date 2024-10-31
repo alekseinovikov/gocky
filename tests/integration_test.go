@@ -11,6 +11,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"os"
 	"testing"
+	"time"
 )
 
 var (
@@ -54,16 +55,17 @@ func TestAllCases(t *testing.T) {
 	}
 
 	testCasesMap := map[string]func(t *testing.T, factory gocky.LockFactory){
-		"Lock name":                            caseLockName,
-		"Initial lock status":                  caseInitialLockStatus,
-		"TryLock success":                      caseTryLockSuccess,
-		"TryLock fail":                         caseTryLockFail,
-		"Lock and Unlock sequence":             caseLockAndUnlockSequence,
-		"Lock factory same instance":           caseLockFactorySameInstance,
-		"Lock factory different instances":     caseLockFactoryDifferentInstances,
-		"Lock concurrency with two goroutines": caseLockConcurrencyWithTwoGoroutines,
-		"Lock concurrency with 100 goroutines": caseLockConcurrencyWith100Goroutines,
-		"TryLock and Unlock in sequence":       caseTryLockAndUnlockInSequence,
+		"Lock name":                                       caseLockName,
+		"Initial lock status":                             caseInitialLockStatus,
+		"TryLock success":                                 caseTryLockSuccess,
+		"TryLock fail":                                    caseTryLockFail,
+		"Lock and Unlock sequence":                        caseLockAndUnlockSequence,
+		"Lock factory same instance":                      caseLockFactorySameInstance,
+		"Lock factory different instances":                caseLockFactoryDifferentInstances,
+		"Lock concurrency with two goroutines":            caseLockConcurrencyWithTwoGoroutines,
+		"Lock concurrency with 100 goroutines":            caseLockConcurrencyWith100Goroutines,
+		"TryLock and Unlock in sequence":                  caseTryLockAndUnlockInSequence,
+		"Lock is kept locked after TTL timeout by ticker": caseAcquiredLockAfterLongTime,
 	}
 
 	for factoryName, factory := range factoriesMap {
@@ -97,6 +99,8 @@ func caseTryLockSuccess(t *testing.T, factory gocky.LockFactory) {
 	success, err := lock.TryLock()
 	assert.NoError(t, err)
 	assert.True(t, success, "TryLock should succeed")
+
+	lock.Unlock()
 }
 
 func caseTryLockFail(t *testing.T, factory gocky.LockFactory) {
@@ -110,6 +114,8 @@ func caseTryLockFail(t *testing.T, factory gocky.LockFactory) {
 	success, err = lock.TryLock()
 	assert.NoError(t, err)
 	assert.False(t, success, "Expected TryLock to fail on already locked lock, but it succeeded")
+
+	lock.Unlock()
 }
 
 func caseLockAndUnlockSequence(t *testing.T, factory gocky.LockFactory) {
@@ -194,6 +200,8 @@ func caseTryLockAndUnlockInSequence(t *testing.T, factory gocky.LockFactory) {
 	success, err = lock.TryLock()
 	assert.NoError(t, err)
 	assert.False(t, success, "Expected TryLock to fail on already locked lock, but it succeeded")
+
+	lock.Unlock()
 }
 
 func caseLockConcurrencyWith100Goroutines(t *testing.T, factory gocky.LockFactory) {
@@ -219,4 +227,42 @@ func caseLockConcurrencyWith100Goroutines(t *testing.T, factory gocky.LockFactor
 	}
 
 	assert.Equal(t, 1, successCounter, "Expected only one TryLock to succeed")
+	lock.Unlock()
+}
+
+func caseAcquiredLockAfterLongTime(t *testing.T, factory gocky.LockFactory) {
+	lock, err := factory.GetLock(
+		"caseAcquiredLockAfterLongTime",
+		context.Background(),
+		gocky.WithTTL(100*time.Millisecond),
+		gocky.WithLockRefreshInterval(50*time.Millisecond),
+	)
+	assert.NoError(t, err)
+
+	success, err := lock.TryLock()
+	assert.NoError(t, err)
+	assert.True(t, success, "TryLock should succeed")
+
+	// Wait for lock to expire
+	time.Sleep(200 * time.Millisecond)
+
+	success, err = lock.TryLock()
+	assert.NoError(t, err)
+	assert.False(t, success, "Expected TryLock to fail after waiting, but it succeeded")
+
+	stillLocked, err := lock.Locked()
+	assert.NoError(t, err)
+	assert.True(t, stillLocked, "Lock must still be locked after waiting")
+
+	lock.Unlock()
+
+	stillLocked, err = lock.Locked()
+	assert.NoError(t, err)
+	assert.False(t, stillLocked, "Lock must be unlocked after calling Unlock()")
+
+	success, err = lock.TryLock()
+	assert.NoError(t, err)
+	assert.True(t, success, "TryLock should succeed after Unlock()")
+
+	lock.Unlock()
 }

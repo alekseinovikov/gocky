@@ -1,6 +1,9 @@
 package gocky
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Lock abstraction for locking, unlocking and checking lock status
 type Lock interface {
@@ -18,5 +21,22 @@ type Lock interface {
 type LockFactory interface {
 
 	// GetLock returns a lock with the given name, may return a cached lock
-	GetLock(lockName string, ctx context.Context) (Lock, error)
+	GetLock(lockName string, ctx context.Context, options ...func(config *Config)) (Lock, error)
+}
+
+type Config struct {
+	TTL                 time.Duration
+	LockRefreshInterval time.Duration
+}
+
+func WithTTL(ttl time.Duration) func(*Config) {
+	return func(config *Config) {
+		config.TTL = ttl
+	}
+}
+
+func WithLockRefreshInterval(interval time.Duration) func(*Config) {
+	return func(config *Config) {
+		config.LockRefreshInterval = interval
+	}
 }
