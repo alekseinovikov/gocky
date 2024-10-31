@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/common"
+	"sync"
 	"time"
 )
 
@@ -59,6 +60,7 @@ func (p *postgresqlLockFactory) GetLock(lockName string, ctx context.Context) (g
 
 type postgresqlLock struct {
 	name   string
+	mutex  sync.Mutex
 	ctx    context.Context
 	db     *sql.DB
 	ticker *common.Ticker
@@ -91,16 +93,62 @@ func (p *postgresqlLock) Locked() (bool, error) {
 }
 
 func (p *postgresqlLock) TryLock() (bool, error) {
-	//TODO implement me
-	panic("implement me")
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	locked, err := p.tryToUpdatePostgresqlLock()
+	if err != nil || !locked {
+		return false, err
+	}
+
+	p.scheduleLockUpdater()
+	return true, nil
 }
 
 func (p *postgresqlLock) Lock() error {
-	//TODO implement me
-	panic("implement me")
+	locked, err := p.TryLock()
+	if err != nil {
+		return err
+	}
+
+	// we are trying to keep the lock
+	for !locked {
+		select {
+		case <-p.ctx.Done():
+			return p.ctx.Err()
+		default:
+			time.Sleep(defaultSpinLockDuration)
+			locked, err = p.TryLock()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (p *postgresqlLock) Unlock() {
-	//TODO implement me
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	defer p.tryToReleasePostgresqlLock()
+
+	p.ticker.Stop()
+}
+
+func (p *postgresqlLock) scheduleLockUpdater() {
+	p.ticker.Start(func() error {
+		_, err := p.tryToUpdatePostgresqlLock()
+		return err
+	})
+}
+
+func (p *postgresqlLock) tryToUpdatePostgresqlLock() (bool, error) {
+	_ = "UPDATE locks SET acquired = true, acquired_at = now() WHERE name = $1 AND (acquired IS FALSE OR "
 	panic("implement me")
+}
+
+func (p *postgresqlLock) tryToReleasePostgresqlLock() {
+	//TODO implement me
+	panic("implement")
 }
