@@ -43,6 +43,7 @@ func (r *redisLockFactory) GetLock(lockName string, ctx context.Context) gocky.L
 			ctx:    ctx,
 			name:   lockName,
 			key:    generateKey(lockName),
+			ticker: common.NewTicker(defaultSpinLockDuration),
 		}
 	})
 }
@@ -53,12 +54,12 @@ func generateKey(lockName string) string {
 }
 
 type redisLock struct {
-	mutex      sync.Mutex
-	name       string
-	ctx        context.Context
-	key        string
-	client     *redis.Client
-	tickerStop chan struct{}
+	ctx    context.Context
+	name   string
+	key    string
+	mutex  sync.Mutex
+	client *redis.Client
+	ticker *common.Ticker
 }
 
 func (r *redisLock) Name() string {
@@ -116,34 +117,14 @@ func (r *redisLock) Unlock() {
 	defer r.mutex.Unlock()
 	defer r.client.Del(r.ctx, r.key)
 
-	if r.tickerStop == nil {
-		return
-	}
-
-	r.tickerStop <- struct{}{}
-	close(r.tickerStop)
+	r.ticker.Stop()
 }
 
 func (r *redisLock) scheduleLockUpdater() {
-	r.tickerStop = make(chan struct{})
-	ticker := time.NewTicker(defaultSpinLockDuration)
-
-	go func() {
-		for {
-			select {
-			case <-r.tickerStop:
-				ticker.Stop()
-				return
-			case <-ticker.C:
-				_, err := r.tryToUpdateRedisLock()
-				if err != nil {
-					ticker.Stop()
-					close(r.tickerStop)
-					return
-				}
-			}
-		}
-	}()
+	r.ticker.Start(func() error {
+		_, err := r.tryToUpdateRedisLock()
+		return err
+	})
 }
 
 func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
