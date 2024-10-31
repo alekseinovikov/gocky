@@ -55,4 +55,5 @@ func (t *Ticker) Stop() {
 
 	t.stopChannel <- struct{}{}
 	<-t.stoppedChannel
+	t.stoppedChannel = nil
 }
