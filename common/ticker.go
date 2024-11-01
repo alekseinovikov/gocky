@@ -31,17 +31,12 @@ func (t *Ticker) Start(action func() error) {
 			select {
 			case <-t.stopChannel:
 				ticker.Stop()
-				t.stopChannel = nil
 				t.stoppedChannel <- struct{}{}
 				return
 			case <-ticker.C:
 				err := action()
 				if err != nil {
-					ticker.Stop()
-					t.stopChannel = nil
-					t.stoppedChannel = nil
-					log.Default().Println("Error in ticker action: ", err)
-					return
+					log.Println("gocky: Failed to update lock TTL: ", err)
 				}
 			}
 		}
@@ -55,5 +50,6 @@ func (t *Ticker) Stop() {
 
 	t.stopChannel <- struct{}{}
 	<-t.stoppedChannel
+	t.stopChannel = nil
 	t.stoppedChannel = nil
 }

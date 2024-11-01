@@ -103,7 +103,7 @@ func TestRedisLock_MeasureTimeOfWaitingForLock(t *testing.T) {
 	_ = lock.Lock()
 	finished := time.Now()
 
-	assert.LessOrEqual(t, finished.Sub(started).Milliseconds(), int64(defaultKeyTTLMillis))
+	assert.LessOrEqual(t, finished.Sub(started).Milliseconds(), int64(defaultKeyTTL))
 }
 
 func TestRedisLock_Locked(t *testing.T) {

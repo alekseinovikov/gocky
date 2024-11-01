@@ -5,13 +5,12 @@ import (
 	"github.com/alekseinovikov/gocky"
 	"github.com/alekseinovikov/gocky/common"
 	"github.com/redis/go-redis/v9"
-	"sync"
 	"time"
 )
 
 var (
 	keyPrefix               = "gocky:lock:"
-	defaultKeyTTLMillis     = 10 * time.Second
+	defaultKeyTTL           = 10 * time.Second
 	defaultSpinLockDuration = 5 * time.Second
 
 	lockAcquireScript = `
@@ -43,7 +42,7 @@ func (r *redisLockFactory) GetLock(
 ) (gocky.Lock, error) {
 	return r.lockCache.GetLock(lockName, ctx, func(ctx context.Context) (gocky.Lock, error) {
 		config := &gocky.Config{
-			TTL:                 defaultKeyTTLMillis,
+			TTL:                 defaultKeyTTL,
 			LockRefreshInterval: defaultSpinLockDuration,
 		}
 
@@ -51,14 +50,15 @@ func (r *redisLockFactory) GetLock(
 			option(config)
 		}
 
-		return &redisLock{
+		redisLock := &redisLock{
 			client: r.client,
 			ctx:    ctx,
 			name:   lockName,
 			key:    generateKey(lockName),
-			ticker: common.NewTicker(config.LockRefreshInterval),
 			config: config,
-		}, nil
+		}
+
+		return common.NewUpdatableLock(ctx, config, redisLock), nil
 	})
 }
 
@@ -72,9 +72,7 @@ type redisLock struct {
 	name   string
 	key    string
 	config *gocky.Config
-	mutex  sync.Mutex
 	client *redis.Client
-	ticker *common.Ticker
 }
 
 func (r *redisLock) Name() string {
@@ -91,57 +89,12 @@ func (r *redisLock) Locked() (bool, error) {
 	return result == 1, nil
 }
 
-func (r *redisLock) TryLock() (bool, error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	locked, err := r.tryToUpdateRedisLock()
-	if err != nil || !locked {
-		return false, err
-	}
-
-	r.scheduleLockUpdater()
-	return true, nil
+func (r *redisLock) ProlongLock() error {
+	expire := r.client.Expire(r.ctx, r.key, r.config.TTL)
+	return expire.Err()
 }
 
-func (r *redisLock) Lock() error {
-	locked, err := r.TryLock()
-	if err != nil {
-		return err
-	}
-
-	// we are trying to keep the lock
-	for !locked {
-		select {
-		case <-r.ctx.Done():
-			return r.ctx.Err()
-		default:
-			time.Sleep(r.config.LockRefreshInterval)
-			locked, err = r.TryLock()
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (r *redisLock) Unlock() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-	defer r.client.Del(r.ctx, r.key)
-
-	r.ticker.Stop()
-}
-
-func (r *redisLock) scheduleLockUpdater() {
-	r.ticker.Start(func() error {
-		return r.prolongLock()
-	})
-}
-
-func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
+func (r *redisLock) TryToAcquireLock() (bool, error) {
 	milliseconds := r.config.TTL.Milliseconds()
 	result := lockAcquireScriptDescriptor.Run(r.ctx, r.client, []string{r.key}, milliseconds)
 	if result.Err() != nil {
@@ -155,7 +108,6 @@ func (r *redisLock) tryToUpdateRedisLock() (bool, error) {
 	return false, nil
 }
 
-func (r *redisLock) prolongLock() error {
-	expire := r.client.Expire(r.ctx, r.key, r.config.TTL)
-	return expire.Err()
+func (r *redisLock) ReleaseLock() {
+	r.client.Del(r.ctx, r.key)
 }
